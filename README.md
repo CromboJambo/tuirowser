@@ -57,7 +57,25 @@ Options:
   -u, --url <URL>  URL to visit (alternative to positional arg)
   -b, --bookmarks  List saved bookmarks
   -d, --dump <URL> Fetch and print markdown without TUI
+  --port <PORT>    Enable HTTP command server on specified port
 ```
+
+### HTTP Command Server
+
+When started with `--port <port>`, TUIrowser exposes a local HTTP API for programmatic control by agents or scripts:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/navigate?url=<url>` | POST | Navigate to URL |
+| `/reload` | POST | Reload current page |
+| `/quit` | POST | Exit browser |
+
+Example with curl:
+```bash
+curl -X POST "http://127.0.0.1:8090/navigate?url=https://news.ycombinator.com"
+```
+
+This enables agent-driven automation without needing terminal emulation or tmux session control.
 
 ### Keyboard shortcuts
 

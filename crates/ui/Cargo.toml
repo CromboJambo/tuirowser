@@ -10,3 +10,4 @@ crossterm.workspace = true
 unicode-width.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+tokio.workspace = true

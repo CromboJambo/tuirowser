@@ -4,10 +4,62 @@
 //!   tuirowser                    # Start with about:blank
 //!   tuirowser <url>              # Open a specific URL
 //!   tuirowser --dump <url>       # Print page as markdown and exit (no TUI)
+//!   tuirowser --port 8090        # Enable HTTP command server on specified port
 
 use anyhow::Result;
 use std::env;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 use tracing_subscriber;
+
+async fn http_command_server(
+    port: u16,
+    tx: mpsc::Sender<tuirowser_ui::BrowserCommand>,
+) -> Result<()> {
+    use axum::{extract::Query, routing::{get, post}, Json, Router};
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct NavigateQuery { url: String }
+
+    let app_state = Arc::new(Mutex::new(tx));
+
+    async fn handle_navigate(
+        Query(q): Query<NavigateQuery>,
+        state: axum::extract::State<Arc<Mutex<mpsc::Sender<tuirowser_ui::BrowserCommand>>>>,
+    ) -> Json<serde_json::Value> {
+        let tx = state.lock().await;
+        let _ = tx.send(tuirowser_ui::BrowserCommand::Navigate(q.url)).await;
+        Json(serde_json::json!({"status": "navigating"}))
+    }
+
+    async fn handle_reload(
+        state: axum::extract::State<Arc<Mutex<mpsc::Sender<tuirowser_ui::BrowserCommand>>>>,
+    ) -> Json<serde_json::Value> {
+        let tx = state.lock().await;
+        let _ = tx.send(tuirowser_ui::BrowserCommand::Reload).await;
+        Json(serde_json::json!({"status": "reloading"}))
+    }
+
+    async fn handle_quit(
+        state: axum::extract::State<Arc<Mutex<mpsc::Sender<tuirowser_ui::BrowserCommand>>>>,
+    ) -> Json<serde_json::Value> {
+        let tx = state.lock().await;
+        let _ = tx.send(tuirowser_ui::BrowserCommand::Quit).await;
+        Json(serde_json::json!({"status": "quitting"}))
+    }
+
+    let app = Router::new()
+        .route("/navigate", post(handle_navigate))
+        .route("/reload", post(handle_reload))
+        .route("/quit", post(handle_quit))
+        .with_state(app_state);
+
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    tracing::info!("HTTP command server listening on 127.0.0.1:{}", port);
+    axum::serve(listener, app).await?;
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,6 +82,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Check for --port flag to enable HTTP command server
+    let http_port = args
+        .iter()
+        .position(|arg| arg == "--port")
+        .and_then(|pos| args.get(pos + 1))
+        .and_then(|p| p.parse::<u16>().ok());
+
     // Normal TUI mode
     let default_url = "about:blank".to_string();
     let url = args
@@ -47,10 +106,23 @@ async fn main() -> Result<()> {
         url: page.url,
         content: markdown,
         running: true,
+        mode: tuirowser_ui::InputMode::Normal,
+        url_input: String::new(),
     };
 
-    // Run the TUI
-    tuirowser_ui::run_app(state)?;
+    // If HTTP port is specified, start command server and pass channel to run_app
+    if let Some(port) = http_port {
+        let (tx, rx) = mpsc::channel(32);
+        let server_task = tokio::spawn(http_command_server(port, tx));
+
+        // Run TUI with HTTP command channel
+        tuirowser_ui::run_app_with_commands(state, rx).await?;
+
+        server_task.abort();
+    } else {
+        // Run standard TUI without HTTP commands
+        tuirowser_ui::run_app(state)?;
+    }
 
     Ok(())
 }
