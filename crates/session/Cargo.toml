@@ -1,0 +1,12 @@
+[package]
+name = "tuirowser-session"
+version.workspace = true
+edition.workspace = true
+description = "Tab management, history, and bookmark persistence"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "tuirowser-ui"
+version.workspace = true
+edition.workspace = true
+description = "Ratatui-based terminal UI for the markdown browser"
+
+[dependencies]
+ratatui.workspace = true
+crossterm.workspace = true
+unicode-width.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

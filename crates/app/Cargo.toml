@@ -1,0 +1,19 @@
+[package]
+name = "tuirowser"
+version.workspace = true
+edition.workspace = true
+description = "A TUI web browser that simplifies pages to markdown"
+
+[[bin]]
+name = "tuirowser"
+path = "src/main.rs"
+
+[dependencies]
+tuirowser-fetch = { path = "../fetch" }
+tuirowser-parser = { path = "../parser" }
+tuirowser-ui = { path = "../ui" }
+tuirowser-session = { path = "../session" }
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

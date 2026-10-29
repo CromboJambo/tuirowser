@@ -1,0 +1,10 @@
+/home/crombo/projects/experiments/tuirowser/target/debug/deps/markup5ever-86f28c4c7be111ba.d: /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/lib.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/mod.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/tree_builder.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/serialize.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/buffer_queue.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/smallcharset.rs
+
+/home/crombo/projects/experiments/tuirowser/target/debug/deps/libmarkup5ever-86f28c4c7be111ba.rmeta: /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/lib.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/mod.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/tree_builder.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/serialize.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/buffer_queue.rs /home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/smallcharset.rs
+
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/lib.rs:
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/mod.rs:
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/interface/tree_builder.rs:
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/serialize.rs:
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/buffer_queue.rs:
+/home/crombo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/markup5ever-0.16.2/util/smallcharset.rs:

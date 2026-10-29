@@ -1,0 +1,11 @@
+[package]
+name = "tuirowser-parser"
+version.workspace = true
+edition.workspace = true
+description = "HTML parsing and markdown conversion pipeline"
+
+[dependencies]
+html5ever.workspace = true
+markup5ever_rcdom.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
