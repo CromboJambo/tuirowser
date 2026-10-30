@@ -24,3 +24,4 @@ mod token;
 pub mod server;
 
 pub use token::{TokenStore, TokenRequest};
+pub use server::{start_server, ServerConfig, ServerHandle};

@@ -132,6 +132,13 @@ async fn main() -> Result<()> {
     let app_config = config::Config::load()?;
     tracing::info!("Loaded configuration");
 
+    // Start ephemeral auth token server
+    let auth_server = tuirowser_auth::start_server(tuirowser_auth::ServerConfig {
+        bind_addr: "127.0.0.1".to_string(),
+        port: 8765,
+    }).await?;
+    tracing::info!("Auth token server started on {}", auth_server.base_url());
+
     let args: Vec<String> = env::args().collect();
 
     // Check for --dump mode (scripting-friendly, no TUI)
@@ -244,6 +251,10 @@ async fn main() -> Result<()> {
         // Run standard TUI without HTTP commands
         tuirowser_ui::run_app(state)?;
     }
+
+    // Shut down auth server
+    auth_server.shutdown().await;
+    tracing::info!("Auth token server shut down");
 
     Ok(())
 }

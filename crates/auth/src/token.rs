@@ -143,8 +143,8 @@ impl TokenStore {
         let now = Utc::now().timestamp() as u64;
         let before = tokens.len();
 
-        // Remove expired tokens
-        tokens.retain(|_, stored| now <= stored.expires_at);
+        // Remove expired tokens (use < to match validation logic)
+        tokens.retain(|_, stored| now < stored.expires_at);
 
         // Remove used single-use tokens
         tokens.retain(|_, stored| !stored.used || stored.multi_use);

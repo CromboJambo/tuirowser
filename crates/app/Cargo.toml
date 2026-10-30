@@ -13,6 +13,7 @@ tuirowser-fetch = { path = "../fetch" }
 tuirowser-parser = { path = "../parser" }
 tuirowser-ui = { path = "../ui" }
 tuirowser-session = { path = "../session" }
+tuirowser-auth = { path = "../auth" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
