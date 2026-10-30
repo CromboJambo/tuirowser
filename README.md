@@ -104,4 +104,4 @@ This enables agent-driven automation without needing terminal emulation or tmux 
 
 ## License
 
-MIT
+AGPL-3.0 — See [LICENSE](LICENSE) for details.

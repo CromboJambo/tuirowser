@@ -1,6 +1,9 @@
 //! Ratatui-based terminal UI for the markdown browser.
 //!
 //! This crate handles all terminal rendering, keyboard input, and user interaction.
+//! It provides two entry points:
+//! - [`run_app`] for standard TUI mode with keyboard control only
+//! - [`run_app_with_commands`] for agent-driven mode that accepts commands via channel
 
 use anyhow::Result;
 use crossterm::{
@@ -21,8 +24,11 @@ use std::io;
 /// Commands that can be sent to the browser from external sources (HTTP API, etc.)
 #[derive(Debug, Clone)]
 pub enum BrowserCommand {
+    /// Navigate to a specific URL
     Navigate(String),
+    /// Reload the current page
     Reload,
+    /// Quit the application
     Quit,
 }
 
@@ -72,7 +78,19 @@ impl Default for AppState {
     }
 }
 
-/// Run the main UI loop.
+/// Run the main UI loop with keyboard control only.
+///
+/// # Example
+/// ```no_run
+/// let state = tuirowser_ui::AppState {
+///     url: "https://example.com".to_string(),
+///     content: "# Hello World".to_string(),
+///     running: true,
+///     mode: tuirowser_ui::InputMode::Normal,
+///     url_input: String::new(),
+/// };
+/// tuirowser_ui::run_app(state).unwrap();
+/// ```
 pub fn run_app(mut state: AppState) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
@@ -95,6 +113,23 @@ pub fn run_app(mut state: AppState) -> Result<()> {
 }
 
 /// Async version that accepts commands from a channel (for HTTP/API control).
+///
+/// This is the entry point for agent-driven browser control. Commands are sent
+/// via the provided receiver channel and processed alongside keyboard input.
+///
+/// # Example
+/// ```no_run
+/// let (tx, rx) = tokio::sync::mpsc::channel(32);
+/// let state = tuirowser_ui::AppState::default();
+///
+/// // Send a navigate command from another task
+/// tx.send(tuirowser_ui::BrowserCommand::Navigate("https://example.com".to_string()));
+///
+/// // Run the app with command channel
+/// tokio::spawn(async move {
+///     tuirowser_ui::run_app_with_commands(state, rx).await.unwrap();
+/// });
+/// ```
 pub async fn run_app_with_commands(mut state: AppState, mut rx: tokio::sync::mpsc::Receiver<BrowserCommand>) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;

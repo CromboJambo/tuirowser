@@ -3,13 +3,21 @@
 //! This crate takes raw HTML and converts it to clean, readable markdown,
 //! stripping away navigation bars, footers, ads, and other non-content elements.
 //!
-//! Uses a simple regex-based approach for initial extraction, with plans to
-//! migrate to full DOM parsing once the markup5ever API stabilizes.
+//! # Example
+//! ```no_run
+//! use tuirowser_parser::html_to_markdown;
+//!
+//! let html = "<h1>Hello</h1><p>World</p>";
+//! let md = html_to_markdown(html).unwrap();
+//! assert_eq!(md, "# Hello\n\nWorld");
+//! ```
 
 use anyhow::Result;
-use std::collections::HashMap;
 
 /// Parse HTML and convert to simplified markdown.
+///
+/// Handles headings, paragraphs, links, bold/italic, code blocks, lists,
+/// and other common HTML elements. Strips script and style tags.
 pub fn html_to_markdown(html: &str) -> Result<String> {
     // First, extract the main content area (body)
     let body = extract_body(html)?;
@@ -95,8 +103,8 @@ fn convert_tag(tag: &str, _chars: &mut std::iter::Peekable<std::str::Chars>) -> 
 
     // Links
     if tag_lower.starts_with("<a ") {
-        if let Some(href) = extract_href(tag) {
-            return Ok(format!("[", ));
+        if let Some(_href) = extract_href(tag) {
+            return Ok("[".to_string());
         }
     }
     if tag_lower == "</a>" {
@@ -176,7 +184,7 @@ fn extract_href(tag: &str) -> Option<String> {
 
 /// Clean up excessive whitespace in markdown output.
 fn cleanup_whitespace(text: &str) -> String {
-    let mut lines: Vec<&str> = text.lines().collect();
+    let lines: Vec<&str> = text.lines().collect();
     let mut result = Vec::new();
     let mut prev_empty = false;
 

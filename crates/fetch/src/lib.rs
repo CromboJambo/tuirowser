@@ -2,6 +2,18 @@
 //!
 //! This crate provides a high-level API for fetching URLs, managing cookies,
 //! and handling common HTTP concerns like user-agent headers and redirects.
+//!
+//! # Example
+//! ```no_run
+//! use tuirowser_fetch::{fetch_page, FetchConfig};
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let config = FetchConfig::default();
+//!     let page = fetch_page("https://example.com", &config).await.unwrap();
+//!     println!("Status: {}", page.status);
+//! }
+//! ```
 
 use anyhow::Result;
 use reqwest::Client;
@@ -39,6 +51,9 @@ pub struct PageContent {
 }
 
 /// Fetch a web page and return its content.
+///
+/// Handles redirects, timeouts, and user-agent headers automatically.
+/// Returns the final URL, HTML content, and HTTP status code.
 pub async fn fetch_page(url: &str, config: &FetchConfig) -> Result<PageContent> {
     let client = Client::builder()
         .user_agent(&config.user_agent)

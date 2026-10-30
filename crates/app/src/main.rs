@@ -16,7 +16,7 @@ async fn http_command_server(
     port: u16,
     tx: mpsc::Sender<tuirowser_ui::BrowserCommand>,
 ) -> Result<()> {
-    use axum::{extract::Query, routing::{get, post}, Json, Router};
+    use axum::{extract::Query, routing::post, Json, Router};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
