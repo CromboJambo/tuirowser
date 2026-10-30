@@ -9,6 +9,7 @@ mod markdown;
 
 use anyhow::Result;
 use crossterm::{
+    cursor::MoveTo,
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -52,6 +53,10 @@ pub enum InputMode {
     Normal,
     /// URL input mode - keystrokes build a URL string.
     UrlInput,
+    /// Bookmarks view - shows saved bookmarks.
+    Bookmarks,
+    /// History view - shows browsing history.
+    History,
 }
 
 /// Application state passed to the UI loop.
@@ -66,6 +71,12 @@ pub struct AppState {
     pub mode: InputMode,
     /// Buffer for URL being typed in UrlInput mode.
     pub url_input: String,
+    /// Scroll offset for content area (line number).
+    pub scroll_offset: usize,
+    /// Saved bookmarks (url -> title).
+    pub bookmarks: Vec<(String, Option<String>)>,
+    /// Browsing history entries (url, title, timestamp).
+    pub history: Vec<(String, Option<String>, u64)>,
 }
 
 impl Default for AppState {
@@ -76,6 +87,9 @@ impl Default for AppState {
             running: true,
             mode: InputMode::Normal,
             url_input: String::new(),
+            scroll_offset: 0,
+            bookmarks: Vec::new(),
+            history: Vec::new(),
         }
     }
 }
@@ -98,6 +112,11 @@ pub fn run_app(mut state: AppState) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+
+    // Enable mouse events
+    use crossterm::event::{EnableMouseCapture, DisableMouseCapture};
+    execute!(stdout, EnableMouseCapture)?;
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -109,6 +128,7 @@ pub fn run_app(mut state: AppState) -> Result<()> {
 
     // Cleanup
     disable_raw_mode()?;
+    execute!(io::stdout(), DisableMouseCapture)?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
 
     Ok(())
@@ -137,6 +157,11 @@ pub async fn run_app_with_commands(mut state: AppState, mut rx: tokio::sync::mps
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+
+    // Enable mouse events
+    use crossterm::event::{EnableMouseCapture, DisableMouseCapture};
+    execute!(stdout, EnableMouseCapture)?;
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -168,6 +193,7 @@ pub async fn run_app_with_commands(mut state: AppState, mut rx: tokio::sync::mps
 
     // Cleanup
     disable_raw_mode()?;
+    execute!(io::stdout(), DisableMouseCapture)?;
     execute!(io::stdout(), LeaveAlternateScreen)?;
 
     Ok(())
@@ -188,6 +214,8 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
     let display_url = match state.mode {
         InputMode::UrlInput => format!("> {}", state.url_input),
         InputMode::Normal => state.url.clone(),
+        InputMode::Bookmarks => "Bookmarks".to_string(),
+        InputMode::History => "History".to_string(),
     };
 
     let url_bar = Paragraph::new(Span::styled(
@@ -199,36 +227,113 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
     .block(Block::default().borders(Borders::ALL).title("termview"));
     frame.render_widget(url_bar, chunks[0]);
 
-    // Content area - render markdown with proper formatting
-    let lines = match markdown::markdown_to_lines(&state.content) {
-        Ok(lines) => lines,
-        Err(_) => vec![Line::from(state.content.as_str())],
-    };
-    let content = Paragraph::new(lines);
-    frame.render_widget(content, chunks[1]);
+    // Content area - render based on current mode
+    match state.mode {
+        InputMode::Normal => {
+            let lines = match markdown::markdown_to_lines(&state.content) {
+                Ok(lines) => lines,
+                Err(_) => vec![Line::from(state.content.as_str())],
+            };
+            let content = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
+            frame.render_widget(content, chunks[1]);
+        }
+        InputMode::Bookmarks => {
+            render_bookmarks(frame, state, chunks[1]);
+        }
+        InputMode::History => {
+            render_history(frame, state, chunks[1]);
+        }
+        InputMode::UrlInput => {
+            // Show content while typing URL
+            let lines = match markdown::markdown_to_lines(&state.content) {
+                Ok(lines) => lines,
+                Err(_) => vec![Line::from(state.content.as_str())],
+            };
+            let content = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
+            frame.render_widget(content, chunks[1]);
+        }
+    }
 
     // Status bar - mode indicator and available commands
     let status_line = match state.mode {
         InputMode::UrlInput => Line::from(vec![
             Span::styled("[ESC] cancel [Enter] go ", Style::default().fg(Color::Yellow)),
         ]),
+        InputMode::Bookmarks => Line::from(vec![
+            Span::styled("[ESC] close [b] bookmark current page ", Style::default().fg(Color::Gray)),
+        ]),
+        InputMode::History => Line::from(vec![
+            Span::styled("[ESC] close ", Style::default().fg(Color::Gray)),
+        ]),
         InputMode::Normal => Line::from(vec![
-            Span::styled("[g]o [q]uit [r]eload ", Style::default().fg(Color::Gray)),
+            Span::styled("[g]o [q]uit [r]eload [b]ookmark [h]istory ", Style::default().fg(Color::Gray)),
         ]),
     };
     frame.render_widget(status_line, chunks[2]);
 }
 
+/// Render the bookmarks view.
+fn render_bookmarks(frame: &mut ratatui::Frame, state: &AppState, area: ratatui::layout::Rect) {
+    if state.bookmarks.is_empty() {
+        let msg = Paragraph::new("No bookmarks saved yet.");
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (i, (url, title)) in state.bookmarks.iter().enumerate() {
+        let display_title = title.as_deref().unwrap_or(url);
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{}] ", i), Style::default().fg(Color::Yellow)),
+            Span::styled(display_title.to_string(), Style::default().fg(Color::Cyan)),
+            Span::styled(format!(" ({})", url), Style::default().fg(Color::Gray)),
+        ]));
+    }
+
+    let bookmarks_view = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
+    frame.render_widget(bookmarks_view, area);
+}
+
+/// Render the history view.
+fn render_history(frame: &mut ratatui::Frame, state: &AppState, area: ratatui::layout::Rect) {
+    if state.history.is_empty() {
+        let msg = Paragraph::new("No browsing history yet.");
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (i, (url, title, _timestamp)) in state.history.iter().enumerate() {
+        let display_title = title.as_deref().unwrap_or(url);
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{}] ", i), Style::default().fg(Color::Yellow)),
+            Span::styled(display_title.to_string(), Style::default().fg(Color::Cyan)),
+            Span::styled(format!(" ({})", url), Style::default().fg(Color::Gray)),
+        ]));
+    }
+
+    let history_view = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
+    frame.render_widget(history_view, area);
+}
+
 /// Handle keyboard input with modal state machine.
 fn handle_input(state: &mut AppState) -> Result<()> {
     if event::poll(std::time::Duration::from_millis(100))? {
-        if let Event::Key(key_event) = event::read()? {
-            if key_event.kind == KeyEventKind::Press {
-                match state.mode {
-                    InputMode::UrlInput => handle_url_input(state, key_event)?,
-                    InputMode::Normal => handle_normal_input(state, key_event)?,
+        match event::read()? {
+            Event::Key(key_event) => {
+                if key_event.kind == KeyEventKind::Press {
+                    match state.mode {
+                        InputMode::UrlInput => handle_url_input(state, key_event)?,
+                        InputMode::Normal | InputMode::Bookmarks | InputMode::History => {
+                            handle_normal_input(state, key_event)?;
+                        }
+                    }
                 }
             }
+            Event::Mouse(mouse_event) => {
+                handle_mouse_event(state, mouse_event)?;
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -267,6 +372,15 @@ fn handle_url_input(state: &mut AppState, key_event: crossterm::event::KeyEvent)
 /// Handle input while in normal navigation mode.
 fn handle_normal_input(state: &mut AppState, key_event: crossterm::event::KeyEvent) -> Result<()> {
     match key_event.code {
+        KeyCode::Esc => {
+            // Close bookmarks or history view
+            match state.mode {
+                InputMode::Bookmarks | InputMode::History => {
+                    state.mode = InputMode::Normal;
+                }
+                _ => {}
+            }
+        }
         KeyCode::Char('q') => {
             state.running = false;
         }
@@ -283,6 +397,52 @@ fn handle_normal_input(state: &mut AppState, key_event: crossterm::event::KeyEve
             state.mode = InputMode::UrlInput;
             state.url_input.clear();
         }
+        KeyCode::Char('b') => {
+            // Toggle bookmarks view
+            if state.mode == InputMode::Bookmarks {
+                state.mode = InputMode::Normal;
+            } else {
+                state.mode = InputMode::Bookmarks;
+            }
+        }
+        KeyCode::Char('h') => {
+            // Toggle history view
+            if state.mode == InputMode::History {
+                state.mode = InputMode::Normal;
+            } else {
+                state.mode = InputMode::History;
+            }
+        }
+        KeyCode::Down => {
+            // Scroll down
+            state.scroll_offset += 3;
+        }
+        KeyCode::Up => {
+            // Scroll up
+            if state.scroll_offset >= 3 {
+                state.scroll_offset -= 3;
+            } else {
+                state.scroll_offset = 0;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle mouse events for scrolling and navigation.
+fn handle_mouse_event(state: &mut AppState, mouse_event: crossterm::event::MouseEvent) -> Result<()> {
+    match mouse_event.kind {
+        crossterm::event::MouseEventKind::ScrollDown => {
+            state.scroll_offset += 3;
+        }
+        crossterm::event::MouseEventKind::ScrollUp => {
+            if state.scroll_offset >= 3 {
+                state.scroll_offset -= 3;
+            } else {
+                state.scroll_offset = 0;
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -292,7 +452,9 @@ fn handle_normal_input(state: &mut AppState, key_event: crossterm::event::KeyEve
 fn handle_command(state: &mut AppState, cmd: Command) {
     match state.mode {
         InputMode::UrlInput => handle_url_input_command(state, cmd),
-        InputMode::Normal => handle_normal_input_command(state, cmd),
+        InputMode::Normal | InputMode::Bookmarks | InputMode::History => {
+            handle_normal_input_command(state, cmd);
+        }
     }
 }
 

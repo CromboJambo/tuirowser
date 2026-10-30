@@ -16,4 +16,4 @@ COPY --from=builder /app/target/release/tuirowser /usr/local/bin/tuirowser
 
 EXPOSE 8081
 
-CMD ["tuirowser", "--port", "8081"]
+CMD ["tuirowser", "--port", "8081", "https://example.com"]

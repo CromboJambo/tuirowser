@@ -9,3 +9,4 @@ html5ever.workspace = true
 markup5ever_rcdom.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+image.workspace = true

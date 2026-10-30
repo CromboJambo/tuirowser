@@ -14,6 +14,12 @@
 
 use anyhow::Result;
 
+mod ascii_image;
+mod css;
+
+pub use ascii_image::image_to_ascii;
+pub use css::parse_inline_style;
+
 /// Parse HTML and convert to simplified markdown.
 ///
 /// Handles headings, paragraphs, links, bold/italic, code blocks, lists,
@@ -144,6 +150,26 @@ fn convert_tag(
         return Ok("]".to_string());
     }
 
+    // Span with inline styling - parse CSS and apply formatting
+    if tag_lower.starts_with("<span") {
+        if let Some(style) = extract_attribute(tag, "style") {
+            let hints = parse_inline_style(&style);
+            let mut prefix = String::new();
+            let mut suffix = String::new();
+
+            if hints.bold {
+                prefix.push_str("**");
+                suffix = format!("**{}", suffix);
+            }
+            if hints.italic {
+                prefix.push('*');
+                suffix = format!("*{}", suffix);
+            }
+
+            return Ok(format!("{}{}", prefix, suffix));
+        }
+    }
+
     // Bold/Strong
     if tag_lower == "<b>" || tag_lower == "<strong>" {
         return Ok("**".to_string());
@@ -225,13 +251,13 @@ fn convert_tag(
         return Ok("\n\n---\n\n".to_string());
     }
 
-    // Images
+    // Images - emit markdown image syntax with URL for post-processing
     if tag_lower.starts_with("<img") {
         if let Some(src) = extract_attribute(tag, "src") {
             if let Some(alt) = extract_attribute(tag, "alt") {
-                return Ok(format!("![{}]({})", alt, src));
+                return Ok(format!("\n\n![{}]({})\n\n", alt, src));
             } else {
-                return Ok(format!("![{}]({})", src, src));
+                return Ok(format!("\n\n![image]({})\n\n", src));
             }
         }
     }

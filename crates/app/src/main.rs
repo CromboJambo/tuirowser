@@ -12,7 +12,66 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing_subscriber;
 
+mod bookmarks;
 mod config;
+
+/// Download an image and convert it to ASCII art.
+async fn download_image_as_ascii(url: &str, width: usize) -> Result<String> {
+    let response = reqwest::get(url).await?;
+    if !response.status().is_success() {
+        anyhow::bail!("Failed to download image from {}", url);
+    }
+
+    let bytes = response.bytes().await?;
+
+    // Convert to ASCII art (blocking, but images are typically small)
+    let ascii = tokio::task::spawn_blocking(move || {
+        tuirowser_parser::image_to_ascii(&bytes, width)
+    })
+    .await??;
+
+    Ok(ascii)
+}
+
+/// Process markdown content: download images and convert to ASCII art.
+async fn process_images_in_markdown(content: &str, page_url: &str) -> Result<String> {
+    use regex::Regex;
+
+    // Find all markdown image syntax: ![alt](url)
+    let image_pattern = Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)")?;
+
+    let mut result = content.to_string();
+    for caps in image_pattern.captures_iter(content) {
+        let full_match = &caps[0];
+        let url = &caps[2];
+
+        // Resolve relative URLs
+        let abs_url = if url.starts_with("http://") || url.starts_with("https://") {
+            url.to_string()
+        } else if url.starts_with("/") {
+            // Absolute path on the same host
+            let scheme_host = page_url.split("/").take(3).collect::<Vec<_>>().join("/");
+            format!("{}{}", scheme_host, url)
+        } else {
+            // Relative path
+            let base = page_url.rsplit_once("/").map(|(b, _)| b).unwrap_or(page_url);
+            format!("{}/{}", base, url)
+        };
+
+        // Try to download and convert to ASCII art
+        match download_image_as_ascii(&abs_url, 60).await {
+            Ok(ascii_art) => {
+                result = result.replace(full_match, &ascii_art);
+            }
+            Err(e) => {
+                // If download fails, keep the original markdown image syntax
+                tracing::debug!("Failed to render image {}: {}", abs_url, e);
+            }
+        }
+    }
+
+    Ok(result)
+}
 
 async fn http_command_server(
     port: u16,
@@ -136,13 +195,23 @@ async fn main() -> Result<()> {
     let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
     let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
 
+    // Process images: download and convert to ASCII art
+    let markdown_with_images = process_images_in_markdown(&markdown, &page.url).await?;
+
     // Setup UI state
+    let bm_manager = bookmarks::BookmarksManager::new()?;
+    let bm_list = bm_manager.list_bookmarks();
+    let history_list = bm_manager.get_recent_history(50);
+
     let state = tuirowser_ui::AppState {
         url: page.url,
-        content: markdown,
+        content: markdown_with_images,
         running: true,
         mode: tuirowser_ui::InputMode::Normal,
         url_input: String::new(),
+        scroll_offset: 0,
+        bookmarks: bm_list.iter().map(|b| (b.url.clone(), b.title.clone())).collect(),
+        history: history_list.iter().map(|h| (h.url.clone(), h.title.clone(), h.timestamp)).collect(),
     };
 
     // If HTTP port is specified, start command server and pass channel to run_app
