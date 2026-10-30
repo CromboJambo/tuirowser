@@ -1,0 +1,21 @@
+[package]
+name = "tuirowser-auth"
+version.workspace = true
+edition.workspace = true
+description = "Ephemeral SSH-style authentication for interactive browser sessions"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+axum = { version = "0.8", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+rand = "0.9"
+chrono = "0.4"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
