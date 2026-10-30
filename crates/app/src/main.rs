@@ -104,7 +104,11 @@ async fn main() -> Result<()> {
             max_redirects: app_config.fetch.max_redirects,
             timeout_secs: app_config.fetch.timeout_secs,
         };
-        let results = tuirowser_fetch::web_search(query, None, &fetch_config).await?;
+        let results = tuirowser_fetch::web_search(
+            query,
+            Some(&app_config.search.searxng_url),
+            &fetch_config,
+        ).await?;
         print!("{}", results);
         return Ok(());
     }

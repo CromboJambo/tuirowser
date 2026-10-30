@@ -9,8 +9,23 @@ use std::path::PathBuf;
 pub struct Config {
     /// HTTP fetch settings.
     pub fetch: FetchConfig,
+    /// Search engine settings.
+    pub search: SearchConfig,
     /// User interface settings.
     pub ui: UiConfig,
+}
+
+/// Search engine configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct SearchConfig {
+    /// URL of the SearXNG instance to use for searches.
+    #[serde(default = "default_searxng_url")]
+    pub searxng_url: String,
+}
+
+fn default_searxng_url() -> String {
+    std::env::var("SEARXNG_URL").unwrap_or_else(|_| "http://localhost:8080".to_string())
 }
 
 /// HTTP client configuration.
@@ -57,7 +72,16 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             fetch: FetchConfig::default(),
+            search: SearchConfig::default(),
             ui: UiConfig::default(),
+        }
+    }
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        SearchConfig {
+            searxng_url: default_searxng_url(),
         }
     }
 }
