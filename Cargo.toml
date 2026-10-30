@@ -39,3 +39,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 toml = "0.8"
 regex = "1"
+
+# RSS/Atom parsing
+rss = "2"
+atom_syndication = "0.12"

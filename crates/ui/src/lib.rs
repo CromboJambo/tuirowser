@@ -98,13 +98,9 @@ impl Default for AppState {
 ///
 /// # Example
 /// ```no_run
-/// let state = tuirowser_ui::AppState {
-///     url: "https://example.com".to_string(),
-///     content: "# Hello World".to_string(),
-///     running: true,
-///     mode: tuirowser_ui::InputMode::Normal,
-///     url_input: String::new(),
-/// };
+/// let mut state = tuirowser_ui::AppState::default();
+/// state.url = "https://example.com".to_string();
+/// state.content = "# Hello World".to_string();
 /// tuirowser_ui::run_app(state).unwrap();
 /// ```
 pub fn run_app(mut state: AppState) -> Result<()> {

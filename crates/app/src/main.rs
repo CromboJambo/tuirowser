@@ -14,6 +14,7 @@ use tracing_subscriber;
 
 mod bookmarks;
 mod config;
+mod rss;
 
 /// Download an image and convert it to ASCII art.
 async fn download_image_as_ascii(url: &str, width: usize) -> Result<String> {
@@ -186,17 +187,33 @@ async fn main() -> Result<()> {
         .find(|arg| arg.starts_with("http"))
         .unwrap_or(&default_url);
 
-    // Fetch the page
+    // Fetch the page or feed
     let fetch_config = tuirowser_fetch::FetchConfig {
         user_agent: app_config.fetch.user_agent.clone(),
         max_redirects: app_config.fetch.max_redirects,
         timeout_secs: app_config.fetch.timeout_secs,
     };
-    let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
-    let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
+
+    let (page_url, markdown) = if url.starts_with("about:") {
+        (url.clone(), "# TUIrowser\n\nWelcome to TUIrowser - a TUI web browser and RSS reader.\n\nType `g` to navigate to a URL or feed.".to_string())
+    } else {
+        // Try to detect if it's an RSS/Atom feed
+        match rss::fetch_feed(url).await {
+            Ok(feed) => {
+                let markdown = rss::feed_to_markdown(&feed);
+                (url.clone(), markdown)
+            }
+            Err(_) => {
+                // Not a feed, fetch as regular page
+                let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
+                let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
+                (page.url.clone(), markdown)
+            }
+        }
+    };
 
     // Process images: download and convert to ASCII art
-    let markdown_with_images = process_images_in_markdown(&markdown, &page.url).await?;
+    let markdown_with_images = process_images_in_markdown(&markdown, &page_url).await?;
 
     // Setup UI state
     let bm_manager = bookmarks::BookmarksManager::new()?;
@@ -204,7 +221,7 @@ async fn main() -> Result<()> {
     let history_list = bm_manager.get_recent_history(50);
 
     let state = tuirowser_ui::AppState {
-        url: page.url,
+        url: page_url,
         content: markdown_with_images,
         running: true,
         mode: tuirowser_ui::InputMode::Normal,

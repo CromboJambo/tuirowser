@@ -93,9 +93,9 @@ fn parse_hex_color(hex: &str) -> Option<String> {
 
 /// Calculate squared color distance.
 fn color_distance(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> u32 {
-    let dr = (r1 as i32 - r2 as i32) as u32;
-    let dg = (g1 as i32 - g2 as i32) as u32;
-    let db = (b1 as i32 - b2 as i32) as u32;
+    let dr = (r1 as i32 - r2 as i32).abs() as u32;
+    let dg = (g1 as i32 - g2 as i32).abs() as u32;
+    let db = (b1 as i32 - b2 as i32).abs() as u32;
     dr * dr + dg * dg + db * db
 }
 
