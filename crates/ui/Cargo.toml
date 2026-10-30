@@ -11,3 +11,5 @@ unicode-width.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tokio.workspace = true
+comrak = "0.59.0"
+regex = "1.13.1"

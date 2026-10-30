@@ -5,6 +5,8 @@
 //! - [`run_app`] for standard TUI mode with keyboard control only
 //! - [`run_app_with_commands`] for agent-driven mode that accepts commands via channel
 
+mod markdown;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -197,8 +199,12 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
     .block(Block::default().borders(Borders::ALL).title("termview"));
     frame.render_widget(url_bar, chunks[0]);
 
-    // Content area
-    let content = Paragraph::new(state.content.as_str());
+    // Content area - render markdown with proper formatting
+    let lines = match markdown::markdown_to_lines(&state.content) {
+        Ok(lines) => lines,
+        Err(_) => vec![Line::from(state.content.as_str())],
+    };
+    let content = Paragraph::new(lines);
     frame.render_widget(content, chunks[1]);
 
     // Status bar - mode indicator and available commands
