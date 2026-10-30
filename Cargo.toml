@@ -4,9 +4,9 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A TUI web browser that simplifies pages to markdown"
-license = "MIT"
+license = "AGPL-3.0"
 repository = "https://github.com/CromboJambo/tuirowser"
 
 [workspace.dependencies]
