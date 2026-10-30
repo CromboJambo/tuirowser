@@ -12,6 +12,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing_subscriber;
 
+mod config;
+
 async fn http_command_server(
     port: u16,
     tx: mpsc::Sender<tuirowser_ui::BrowserCommand>,
@@ -66,6 +68,10 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
+    // Load configuration
+    let app_config = config::Config::load()?;
+    tracing::info!("Loaded configuration");
+
     let args: Vec<String> = env::args().collect();
 
     // Check for --dump mode (scripting-friendly, no TUI)
@@ -75,8 +81,12 @@ async fn main() -> Result<()> {
             .find(|arg| arg.starts_with("http"))
             .ok_or_else(|| anyhow::anyhow!("No URL provided for --dump mode"))?;
 
-        let config = tuirowser_fetch::FetchConfig::default();
-        let page = tuirowser_fetch::fetch_page(url, &config).await?;
+        let fetch_config = tuirowser_fetch::FetchConfig {
+            user_agent: app_config.fetch.user_agent.clone(),
+            max_redirects: app_config.fetch.max_redirects,
+            timeout_secs: app_config.fetch.timeout_secs,
+        };
+        let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
         let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
         print!("{}", markdown);
         return Ok(());
@@ -97,8 +107,12 @@ async fn main() -> Result<()> {
         .unwrap_or(&default_url);
 
     // Fetch the page
-    let config = tuirowser_fetch::FetchConfig::default();
-    let page = tuirowser_fetch::fetch_page(url, &config).await?;
+    let fetch_config = tuirowser_fetch::FetchConfig {
+        user_agent: app_config.fetch.user_agent.clone(),
+        max_redirects: app_config.fetch.max_redirects,
+        timeout_secs: app_config.fetch.timeout_secs,
+    };
+    let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
     let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
 
     // Setup UI state
