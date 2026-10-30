@@ -14,6 +14,7 @@ use tracing_subscriber;
 
 mod bookmarks;
 mod config;
+mod forms;
 mod rss;
 
 /// Download an image and convert it to ASCII art.
@@ -201,20 +202,36 @@ async fn main() -> Result<()> {
         timeout_secs: app_config.fetch.timeout_secs,
     };
 
-    let (page_url, markdown) = if url.starts_with("about:") {
-        (url.clone(), "# TUIrowser\n\nWelcome to TUIrowser - a TUI web browser and RSS reader.\n\nType `g` to navigate to a URL or feed.".to_string())
+    let (page_url, markdown, page_html) = if url.starts_with("about:") {
+        (url.clone(), "# TUIrowser\n\nWelcome to TUIrowser - a TUI web browser and RSS reader.\n\nType `g` to navigate to a URL or feed.".to_string(), String::new())
     } else {
         // Try to detect if it's an RSS/Atom feed
         match rss::fetch_feed(url).await {
             Ok(feed) => {
                 let markdown = rss::feed_to_markdown(&feed);
-                (url.clone(), markdown)
+                (url.clone(), markdown, String::new())
             }
             Err(_) => {
                 // Not a feed, fetch as regular page
                 let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
                 let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
-                (page.url.clone(), markdown)
+
+                // Detect forms on the page
+                if forms::has_forms(&page.html) {
+                    let detected_forms = forms::parse_forms(&page.html);
+                    tracing::info!("Detected {} form(s) on page", detected_forms.len());
+
+                    for (i, form) in detected_forms.iter().enumerate() {
+                        tracing::info!("Form {}: action={}, method={}, fields={}",
+                            i + 1, form.action, form.method, form.fields.len());
+                        for field in &form.fields {
+                            tracing::info!("  - {} (type={}, required={})",
+                                field.name, field.field_type, field.required);
+                        }
+                    }
+                }
+
+                (page.url.clone(), markdown, page.html)
             }
         }
     };
