@@ -1,0 +1,11 @@
+# TUIrowser browser-as-a-service
+# Start: podman compose up -d
+# Stop:  podman compose down
+# Navigate: curl -X POST "http://127.0.0.1:8090/navigate?url=https://example.com"
+
+services:
+  browser:
+    build: .
+    container_name: tuirowser-browser
+    network_mode: host
+    restart: unless-stopped
