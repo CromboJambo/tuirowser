@@ -72,3 +72,6 @@ pub async fn fetch_page(url: &str, config: &FetchConfig) -> Result<PageContent> 
         status,
     })
 }
+
+mod search;
+pub use search::web_search;

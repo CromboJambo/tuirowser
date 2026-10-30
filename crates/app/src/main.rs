@@ -92,6 +92,23 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Check for --search mode (scripting-friendly search)
+    if args.contains(&"--search".to_string()) {
+        let query = args
+            .iter()
+            .find(|arg| !arg.starts_with("--") && arg.as_str() != &args[0])
+            .ok_or_else(|| anyhow::anyhow!("No search query provided"))?;
+
+        let fetch_config = tuirowser_fetch::FetchConfig {
+            user_agent: app_config.fetch.user_agent.clone(),
+            max_redirects: app_config.fetch.max_redirects,
+            timeout_secs: app_config.fetch.timeout_secs,
+        };
+        let results = tuirowser_fetch::web_search(query, None, &fetch_config).await?;
+        print!("{}", results);
+        return Ok(());
+    }
+
     // Check for --port flag to enable HTTP command server
     let http_port = args
         .iter()
