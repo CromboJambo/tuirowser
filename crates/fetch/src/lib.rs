@@ -73,5 +73,7 @@ pub async fn fetch_page(url: &str, config: &FetchConfig) -> Result<PageContent> 
     })
 }
 
+mod extract;
 mod search;
-pub use search::web_search;
+pub use extract::{extract_content, extract_content_multi, ExtractedContent};
+pub use search::{web_search, web_search_structured};

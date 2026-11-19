@@ -1,0 +1,15 @@
+[package]
+name = "tuirowser-core"
+version.workspace = true
+edition.workspace = true
+description = "Document model and markdown parsing for tuirowser"
+
+[dependencies]
+comrak = "0.59.0"
+ratatui.workspace = true
+unicode-width.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+toml.workspace = true
+directories.workspace = true

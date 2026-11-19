@@ -1,0 +1,38 @@
+# Herdr plugin manifest for tuirowser
+# Install by copying this file to ~/.config/herdr/plugins/tuirowser.toml
+# or placing it in a directory scanned by herdr's plugin loader.
+
+[plugin]
+id = "tuirowser"
+name = "TUIrowser Markdown Viewer"
+version = "0.1.0"
+description = "View markdown files and web pages in a TUI browser with heading navigation"
+author = "crombo"
+
+# Environment variables the plugin reads when launched by herdr
+[env]
+HERDR_ENV = "1"
+TUIROUSER_FILE = "${HERDR_PLUGIN_CONTEXT_JSON.file}"
+TUIROUSER_URL = "${HERDR_PLUGIN_CONTEXT_JSON.url}"
+
+[[actions]]
+id = "open"
+title = "Open in TUIrowser"
+description = "Open a markdown file or URL in the tuirowser TUI viewer"
+contexts = ["workspace", "pane"]
+command = ["tuirowser", "herdr", "open"]
+
+[[actions]]
+id = "open-file"
+title = "Open File in TUIrowser"
+description = "Open a specific local markdown file"
+contexts = ["workspace"]
+command = ["tuirowser"]
+args = ["${HERDR_PLUGIN_CONTEXT_JSON.file}"]
+
+# Key bindings for the command palette
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "tuirowser.open"
+description = "Open in TUIrowser"

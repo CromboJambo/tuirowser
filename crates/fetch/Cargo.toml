@@ -12,3 +12,5 @@ serde_json.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 urlencoding = "2"
+crabjar-web-search = { git = "https://github.com/CromboJambo/crabjar.git", branch = "main" }
+crabjar-web-extract = { git = "https://github.com/CromboJambo/crabjar.git", branch = "main" }

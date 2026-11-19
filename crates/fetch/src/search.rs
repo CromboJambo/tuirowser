@@ -1,68 +1,37 @@
-//! Search functionality using SearXNG metasearch engine.
+//! Search functionality using crabjar-web-search (multi-backend).
 //!
-//! Provides web search capabilities by querying a SearXNG instance
-//! and formatting results as markdown for display in the TUI browser.
+//! Provides web search capabilities via crabjar's multi-backend search engine
+//! (SearXNG primary, Brave fallback, DuckDuckGo final fallback) and formats
+//! results as markdown for display in the TUI browser.
 
 use anyhow::Result;
-use urlencoding::encode;
+use std::env;
 
-/// Default public SearXNG instance.
-const DEFAULT_SEARXNG_URL: &str = "http://localhost:8080";
-
-/// Search result item from SearXNG API.
-#[derive(Debug, serde::Deserialize)]
-struct SearchResult {
-    title: String,
-    url: String,
-    content: Option<String>,
-}
-
-/// Search response from SearXNG JSON API.
-#[derive(Debug, serde::Deserialize)]
-struct SearchResponse {
-    results: Vec<SearchResult>,
-}
-
-/// Perform a web search using SearXNG and return formatted markdown results.
+/// Perform a web search using crabjar-web-search and return formatted markdown results.
+///
+/// Uses crabjar's multi-backend search (SearXNG > Brave > DuckDuckGo).
+/// The `searxng_url` parameter sets the SEARXNG_URL env var for this call if provided.
 ///
 /// # Arguments
 /// * `query` - The search query string
-/// * `searxng_url` - URL of the SearXNG instance (optional, uses default if None)
-/// * `config` - Fetch configuration for HTTP client settings
+/// * `searxng_url` - URL of the SearXNG instance (optional; sets SEARXNG_URL for this call)
+/// * `limit` - Maximum number of results to return
 ///
 /// # Returns
 /// Markdown-formatted search results with numbered links
 pub async fn web_search(
     query: &str,
     searxng_url: Option<&str>,
-    config: &super::FetchConfig,
+    limit: usize,
 ) -> Result<String> {
-    let base_url = searxng_url.unwrap_or(DEFAULT_SEARXNG_URL);
-
-    // Build the search URL with JSON format parameter
-    let encoded_query = encode(query);
-    let search_url = format!(
-        "{}/search?q={}&format=json&language=all",
-        base_url, encoded_query
-    );
-
-    // Fetch the search results
-    let page = super::fetch_page(&search_url, config).await?;
-
-    // Check if we got JSON back
-    let trimmed = page.html.trim();
-    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
-        return Err(anyhow::anyhow!(
-            "SearXNG instance at {} did not return JSON. \n\
-             Make sure your SearXNG instance supports the JSON API (format=json). \n\
-             Response started with: {}",
-            base_url,
-            &trimmed[..trimmed.chars().take(100).count()]
-        ));
+    // If a specific SearXNG URL is provided, set it for this call
+    if let Some(url) = searxng_url {
+        unsafe { env::set_var("SEARXNG_URL", url); }
     }
 
-    // Parse the JSON response
-    let response: SearchResponse = serde_json::from_str(&page.html)?;
+    let response = crabjar_web_search::search(query, Some(limit))
+        .await
+        .map_err(|e| anyhow::anyhow!("Web search failed: {}", e))?;
 
     // Format results as markdown
     let mut output = format!("# Search Results for: {}\n\n", query);
@@ -74,13 +43,11 @@ pub async fn web_search(
             let num = i + 1;
             output.push_str(&format!("{}. [{}]({})\n", num, result.title, result.url));
 
-            if let Some(content) = &result.content {
-                // Truncate content preview to reasonable length
-                let preview = if content.len() > 200 {
-                    format!("{}...", &content[..200])
-                } else {
-                    content.clone()
-                };
+            if let Some(desc) = &result.description {
+                let preview = truncate(desc, 200);
+                output.push_str(&format!("   {}\n", preview));
+            } else if let Some(snippet) = &result.snippet {
+                let preview = truncate(snippet, 200);
                 output.push_str(&format!("   {}\n", preview));
             }
 
@@ -89,4 +56,40 @@ pub async fn web_search(
     }
 
     Ok(output)
+}
+
+/// Perform a web search and return structured results (for programmatic use).
+///
+/// # Arguments
+/// * `query` - The search query string
+/// * `searxng_url` - URL of the SearXNG instance (optional; sets SEARXNG_URL for this call)
+/// * `limit` - Maximum number of results to return
+///
+/// # Returns
+/// Structured search response with URLs, titles, and descriptions
+pub async fn web_search_structured(
+    query: &str,
+    searxng_url: Option<&str>,
+    limit: usize,
+) -> Result<crabjar_web_search::SearchResponse> {
+    if let Some(url) = searxng_url {
+        unsafe { env::set_var("SEARXNG_URL", url); }
+    }
+
+    crabjar_web_search::search(query, Some(limit))
+        .await
+        .map_err(|e| anyhow::anyhow!("Web search failed: {}", e))
+}
+
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        s.to_string()
+    } else {
+        // Truncate at char boundary to avoid splitting UTF-8
+        let mut end = max_chars;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
+    }
 }

@@ -6,6 +6,10 @@
 //! - [`run_app_with_commands`] for agent-driven mode that accepts commands via channel
 
 mod markdown;
+mod herdr;
+
+pub use herdr::{HerdrContext, HerdrEnv, LaunchTarget};
+use tuirowser_core::{Document, DocLayout, HeadingIndex};
 
 use anyhow::Result;
 use crossterm::{
@@ -61,10 +65,14 @@ pub enum InputMode {
 
 /// Application state passed to the UI loop.
 pub struct AppState {
-    /// Current URL being displayed.
+    /// Current URL being displayed (or file path in viewer mode).
     pub url: String,
-    /// Markdown content to display.
+    /// Raw markdown content to display.
     pub content: String,
+    /// Parsed document model (rebuilt when content changes).
+    pub document: Option<Document>,
+    /// Heading index for navigation (rebuilt with document).
+    pub heading_index: Option<HeadingIndex>,
     /// Whether the app should continue running.
     pub running: bool,
     /// Current input mode.
@@ -77,19 +85,96 @@ pub struct AppState {
     pub bookmarks: Vec<(String, Option<String>)>,
     /// Browsing history entries (url, title, timestamp).
     pub history: Vec<(String, Option<String>, u64)>,
+    /// Whether we're running inside herdr (affects UI chrome).
+    pub in_herdr: bool,
+    /// Document title (from first H1 or URL).
+    pub doc_title: Option<String>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             url: "about:blank".to_string(),
-            content: "".to_string(),
+            content: String::new(),
+            document: None,
+            heading_index: None,
             running: true,
             mode: InputMode::Normal,
             url_input: String::new(),
             scroll_offset: 0,
             bookmarks: Vec::new(),
             history: Vec::new(),
+            in_herdr: false,
+            doc_title: None,
+        }
+    }
+}
+
+impl AppState {
+    /// Set new content and rebuild the document model.
+    pub fn set_content(&mut self, markdown: String) {
+        self.content = markdown.clone();
+        match Document::parse(&markdown) {
+            Ok(doc) => {
+                self.doc_title = doc.title.clone();
+                self.heading_index = Some(HeadingIndex::build(&doc));
+                self.document = Some(doc);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse document: {}", e);
+                self.document = None;
+                self.heading_index = None;
+            }
+        }
+    }
+
+    /// Navigate to the next heading.
+    pub fn next_heading(&mut self) {
+        if let Some(doc) = &self.document {
+            // Find current block from scroll position
+            let current_block_id = self.current_block_id();
+            if let Some(next) = doc.next_heading(current_block_id) {
+                self.scroll_to_block(next.id);
+            }
+        }
+    }
+
+    /// Navigate to the previous heading.
+    pub fn prev_heading(&mut self) {
+        if let Some(doc) = &self.document {
+            let current_block_id = self.current_block_id();
+            if let Some(prev) = doc.prev_heading(current_block_id) {
+                self.scroll_to_block(prev.id);
+            }
+        }
+    }
+
+    /// Get the block ID at the current scroll position.
+    fn current_block_id(&self) -> usize {
+        // Approximate: find which block contains our scroll line
+        if let Some(doc) = &self.document {
+            let mut line_count = 0;
+            for block in &doc.blocks {
+                line_count += block.line_count();
+                if line_count > self.scroll_offset {
+                    return block.id;
+                }
+            }
+        }
+        0
+    }
+
+    /// Scroll to a specific block.
+    fn scroll_to_block(&mut self, block_id: usize) {
+        if let Some(doc) = &self.document {
+            let mut line_count = 0;
+            for block in &doc.blocks {
+                if block.id == block_id {
+                    self.scroll_offset = line_count;
+                    return;
+                }
+                line_count += block.line_count();
+            }
         }
     }
 }
@@ -209,9 +294,18 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
     // URL bar - shows current URL or input buffer depending on mode
     let display_url = match state.mode {
         InputMode::UrlInput => format!("> {}", state.url_input),
+        InputMode::Normal if state.in_herdr => {
+            format!("{} [herdr]", state.url)
+        }
         InputMode::Normal => state.url.clone(),
         InputMode::Bookmarks => "Bookmarks".to_string(),
         InputMode::History => "History".to_string(),
+    };
+
+    let title = if let Some(doc_title) = &state.doc_title {
+        format!("termview — {}", doc_title)
+    } else {
+        "termview".to_string()
     };
 
     let url_bar = Paragraph::new(Span::styled(
@@ -220,33 +314,19 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
             .fg(if state.mode == InputMode::UrlInput { Color::Yellow } else { Color::Cyan })
             .add_modifier(Modifier::BOLD),
     ))
-    .block(Block::default().borders(Borders::ALL).title("termview"));
+    .block(Block::default().borders(Borders::ALL).title(title));
     frame.render_widget(url_bar, chunks[0]);
 
     // Content area - render based on current mode
     match state.mode {
-        InputMode::Normal => {
-            let lines = match markdown::markdown_to_lines(&state.content) {
-                Ok(lines) => lines,
-                Err(_) => vec![Line::from(state.content.as_str())],
-            };
-            let content = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
-            frame.render_widget(content, chunks[1]);
+        InputMode::Normal | InputMode::UrlInput => {
+            render_content(frame, state, chunks[1]);
         }
         InputMode::Bookmarks => {
             render_bookmarks(frame, state, chunks[1]);
         }
         InputMode::History => {
             render_history(frame, state, chunks[1]);
-        }
-        InputMode::UrlInput => {
-            // Show content while typing URL
-            let lines = match markdown::markdown_to_lines(&state.content) {
-                Ok(lines) => lines,
-                Err(_) => vec![Line::from(state.content.as_str())],
-            };
-            let content = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
-            frame.render_widget(content, chunks[1]);
         }
     }
 
@@ -261,11 +341,79 @@ fn render_frame(frame: &mut ratatui::Frame, state: &AppState) {
         InputMode::History => Line::from(vec![
             Span::styled("[ESC] close ", Style::default().fg(Color::Gray)),
         ]),
-        InputMode::Normal => Line::from(vec![
-            Span::styled("[g]o [q]uit [r]eload [b]ookmark [h]istory ", Style::default().fg(Color::Gray)),
-        ]),
+        InputMode::Normal => {
+            let mut spans = vec![
+                Span::styled("[g]o [q]uit [r]eload [b]ookmark [h]istory ", Style::default().fg(Color::Gray)),
+            ];
+            if state.heading_index.as_ref().map(|i| !i.is_empty()).unwrap_or(false) {
+                spans.push(Span::styled("[]/[] headings ", Style::default().fg(Color::DarkGray)));
+            }
+            Line::from(spans)
+        }
     };
     frame.render_widget(status_line, chunks[2]);
+}
+
+/// Render document content using the block model when available.
+fn render_content(frame: &mut ratatui::Frame, state: &AppState, area: ratatui::layout::Rect) {
+    if let Some(doc) = &state.document {
+        // Use the new block-based layout
+        let wrap_width = area.width as usize;
+        let layout = DocLayout::compute(doc, area, wrap_width);
+
+        // Apply scroll offset
+        let mut scrolled_layout = layout;
+        scrolled_layout.scroll_offset = state.scroll_offset;
+
+        let visible = scrolled_layout.visible_lines();
+        let mut lines: Vec<Line> = Vec::new();
+
+        for rl in visible {
+            if rl.content.is_empty() {
+                lines.push(Line::default());
+            } else {
+                // Look up the block to get proper styling
+                if let Some(block) = doc.block(rl.block_id) {
+                    // For now, render as plain text with basic styling based on block kind
+                    let style = match block.kind {
+                        tuirowser_core::BlockKind::Heading(level) => {
+                            let color = match level {
+                                1 => Color::LightMagenta,
+                                2 => Color::LightCyan,
+                                3 => Color::LightGreen,
+                                _ => Color::LightYellow,
+                            };
+                            Style::default().fg(color).add_modifier(Modifier::BOLD)
+                        }
+                        tuirowser_core::BlockKind::CodeBlock(_) => {
+                            Style::default().fg(Color::LightCyan).bg(Color::Rgb(30, 30, 30))
+                        }
+                        tuirowser_core::BlockKind::Quote => {
+                            Style::default().fg(Color::LightYellow).add_modifier(Modifier::ITALIC)
+                        }
+                        tuirowser_core::BlockKind::Rule => {
+                            Style::default().fg(Color::DarkGray)
+                        }
+                        _ => Style::default(),
+                    };
+                    lines.push(Line::from(Span::styled(rl.content.clone(), style)));
+                } else {
+                    lines.push(Line::from(rl.content.clone()));
+                }
+            }
+        }
+
+        let content = Paragraph::new(lines);
+        frame.render_widget(content, area);
+    } else {
+        // Fallback to old rendering if document model unavailable
+        let lines = match markdown::markdown_to_lines(&state.content) {
+            Ok(lines) => lines,
+            Err(_) => vec![Line::from(state.content.as_str())],
+        };
+        let content = Paragraph::new(lines).scroll((state.scroll_offset as u16, 0));
+        frame.render_widget(content, area);
+    }
 }
 
 /// Render the bookmarks view.
@@ -420,6 +568,14 @@ fn handle_normal_input(state: &mut AppState, key_event: crossterm::event::KeyEve
             } else {
                 state.scroll_offset = 0;
             }
+        }
+        KeyCode::Char(']') => {
+            // Next heading
+            state.next_heading();
+        }
+        KeyCode::Char('[') => {
+            // Previous heading
+            state.prev_heading();
         }
         _ => {}
     }

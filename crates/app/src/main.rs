@@ -3,11 +3,14 @@
 //! Usage:
 //!   tuirowser                    # Start with about:blank
 //!   tuirowser <url>              # Open a specific URL
+//!   tuirowser <file.md>          # Open a local markdown file
 //!   tuirowser --dump <url>       # Print page as markdown and exit (no TUI)
 //!   tuirowser --port 8090        # Enable HTTP command server on specified port
+//!   tuirowser herdr open         # Open from herdr plugin context (env vars)
 
 use anyhow::Result;
 use std::env;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing_subscriber;
@@ -124,6 +127,94 @@ async fn http_command_server(
     Ok(())
 }
 
+/// Open a local markdown file and return (file_url, content).
+fn open_local_file(path: &PathBuf) -> Result<(String, String)> {
+    use std::fs;
+    let content = fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", path.display(), e))?;
+    let url = format!("file://{}", path.display());
+    Ok((url, content))
+}
+
+/// Fetch a remote page (web or RSS feed) and return (url, markdown, html).
+async fn fetch_remote_page(url: &str, app_config: &config::Config) -> Result<(String, String, String)> {
+    let fetch_config = tuirowser_fetch::FetchConfig {
+        user_agent: app_config.fetch.user_agent.clone(),
+        max_redirects: app_config.fetch.max_redirects,
+        timeout_secs: app_config.fetch.timeout_secs,
+    };
+
+    // Try to detect if it's an RSS/Atom feed
+    match rss::fetch_feed(url).await {
+        Ok(feed) => {
+            let markdown = rss::feed_to_markdown(&feed);
+            Ok((url.to_string(), markdown, String::new()))
+        }
+        Err(_) => {
+            // Not a feed, fetch as regular page
+            let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
+            let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
+
+            // Detect forms on the page
+            if forms::has_forms(&page.html) {
+                let detected_forms = forms::parse_forms(&page.html);
+                tracing::info!("Detected {} form(s) on page", detected_forms.len());
+
+                for (i, form) in detected_forms.iter().enumerate() {
+                    tracing::info!("Form {}: action={}, method={}, fields={}",
+                        i + 1, form.action, form.method, form.fields.len());
+                    for field in &form.fields {
+                        tracing::info!("  - {} (type={}, required={})",
+                            field.name, field.field_type, field.required);
+                    }
+                }
+            }
+
+            Ok((page.url.clone(), markdown, page.html))
+        }
+    }
+}
+
+/// Load bookmarks manager.
+fn bm_manager_load() -> Result<bookmarks::BookmarksManager> {
+    bookmarks::BookmarksManager::new()
+}
+
+/// Build AppState from components.
+fn build_app_state(
+    url: String,
+    content: String,
+    bm_manager: &bookmarks::BookmarksManager,
+    in_herdr: bool,
+) -> tuirowser_ui::AppState {
+    let bm_list = bm_manager.list_bookmarks();
+    let history_list = bm_manager.get_recent_history(50);
+
+    let mut state = tuirowser_ui::AppState {
+        url,
+        content: String::new(),
+        document: None,
+        heading_index: None,
+        running: true,
+        mode: tuirowser_ui::InputMode::Normal,
+        url_input: String::new(),
+        scroll_offset: 0,
+        bookmarks: bm_list.iter().map(|b| (b.url.clone(), b.title.clone())).collect(),
+        history: history_list.iter().map(|h| (h.url.clone(), h.title.clone(), h.timestamp)).collect(),
+        in_herdr,
+        doc_title: None,
+    };
+    state.set_content(content);
+    state
+}
+
+/// Run the TUI with the given state.
+async fn run_tui(state: tuirowser_ui::AppState) -> Result<()> {
+    // For now, just run the standard app (HTTP port support can be added later for herdr mode)
+    tuirowser_ui::run_app(state)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
@@ -141,6 +232,33 @@ async fn main() -> Result<()> {
     tracing::info!("Auth token server started on {}", auth_server.base_url());
 
     let args: Vec<String> = env::args().collect();
+
+    // Handle `herdr open` subcommand - reads context from HERDR_* env vars
+    if args.len() >= 3 && args[1] == "herdr" && args[2] == "open" {
+        let target = tuirowser_ui::LaunchTarget::resolve(None, None);
+        tracing::info!("Herdr launch: file={:?} url={:?} in_herdr={}", 
+            target.file, target.url, target.in_herdr);
+
+        // Resolve what to open
+        let (page_url, markdown, _html) = if let Some(file_path) = &target.file {
+            let (url, content) = open_local_file(file_path)?;
+            (url, content, String::new())
+        } else if let Some(url) = &target.url {
+            fetch_remote_page(url, &app_config).await?
+        } else {
+            // No file or URL - show help in herdr context
+            (
+                "herdr:help".to_string(),
+                "# TUIrowser (Herdr Mode)\n\nNo file or URL specified.\n\nSet `TUIROUSER_FILE` to open a local markdown file,\nor `TUIROUSER_URL` to navigate to a web page.".to_string(),
+                String::new(),
+            )
+        };
+
+        let state = build_app_state(page_url, markdown, &bm_manager_load()?, target.in_herdr);
+        run_tui(state).await?;
+        auth_server.shutdown().await;
+        return Ok(());
+    }
 
     // Check for --dump mode (scripting-friendly, no TUI)
     if args.contains(&"--dump".to_string()) {
@@ -167,15 +285,10 @@ async fn main() -> Result<()> {
             .find(|arg| !arg.starts_with("--") && arg.as_str() != &args[0])
             .ok_or_else(|| anyhow::anyhow!("No search query provided"))?;
 
-        let fetch_config = tuirowser_fetch::FetchConfig {
-            user_agent: app_config.fetch.user_agent.clone(),
-            max_redirects: app_config.fetch.max_redirects,
-            timeout_secs: app_config.fetch.timeout_secs,
-        };
         let results = tuirowser_fetch::web_search(
             query,
             Some(&app_config.search.searxng_url),
-            &fetch_config,
+            10,
         ).await?;
         print!("{}", results);
         return Ok(());
@@ -188,72 +301,77 @@ async fn main() -> Result<()> {
         .and_then(|pos| args.get(pos + 1))
         .and_then(|p| p.parse::<u16>().ok());
 
-    // Normal TUI mode
+    // Normal TUI mode - detect file paths vs URLs
     let default_url = "about:blank".to_string();
-    let url = args
-        .iter()
-        .find(|arg| arg.starts_with("http"))
-        .unwrap_or(&default_url);
-
-    // Fetch the page or feed
-    let fetch_config = tuirowser_fetch::FetchConfig {
-        user_agent: app_config.fetch.user_agent.clone(),
-        max_redirects: app_config.fetch.max_redirects,
-        timeout_secs: app_config.fetch.timeout_secs,
+    
+    // Check for herdr environment (even without explicit subcommand)
+    let herdr_env = tuirowser_ui::HerdrEnv::detect();
+    
+    // Determine what to open: local file > URL arg > herdr env > about:blank
+    let target = if args.iter().any(|a| a.starts_with("http")) {
+        // URL argument provided
+        let url = args.iter().find(|arg| arg.starts_with("http")).unwrap();
+        ("url".to_string(), Some(url.clone()), None)
+    } else if let Some(file_path) = args.iter().find(|a| !a.starts_with("--") && a.as_str() != &args[0] && PathBuf::from(a).exists()) {
+        // Local file path provided
+        ("file".to_string(), None, Some(PathBuf::from(file_path)))
+    } else if let Some(file_path) = herdr_env.file.clone() {
+        // From herdr environment
+        ("herdr-file".to_string(), None, Some(file_path))
+    } else if let Some(url) = herdr_env.url.clone() {
+        // URL from herdr environment
+        ("herdr-url".to_string(), Some(url), None)
+    } else {
+        ("about".to_string(), Some(default_url.clone()), None)
     };
 
-    let (page_url, markdown, page_html) = if url.starts_with("about:") {
-        (url.clone(), "# TUIrowser\n\nWelcome to TUIrowser - a TUI web browser and RSS reader.\n\nType `g` to navigate to a URL or feed.".to_string(), String::new())
-    } else {
-        // Try to detect if it's an RSS/Atom feed
-        match rss::fetch_feed(url).await {
-            Ok(feed) => {
-                let markdown = rss::feed_to_markdown(&feed);
-                (url.clone(), markdown, String::new())
-            }
-            Err(_) => {
-                // Not a feed, fetch as regular page
-                let page = tuirowser_fetch::fetch_page(url, &fetch_config).await?;
-                let markdown = tuirowser_parser::html_to_markdown(&page.html)?;
+    tracing::info!("Opening: {:?} url={:?} file={:?}", target.0, target.1, target.2);
 
-                // Detect forms on the page
-                if forms::has_forms(&page.html) {
-                    let detected_forms = forms::parse_forms(&page.html);
-                    tracing::info!("Detected {} form(s) on page", detected_forms.len());
-
-                    for (i, form) in detected_forms.iter().enumerate() {
-                        tracing::info!("Form {}: action={}, method={}, fields={}",
-                            i + 1, form.action, form.method, form.fields.len());
-                        for field in &form.fields {
-                            tracing::info!("  - {} (type={}, required={})",
-                                field.name, field.field_type, field.required);
-                        }
-                    }
-                }
-
-                (page.url.clone(), markdown, page.html)
+    let (page_url, markdown, page_html) = match target.2 {
+        Some(file_path) => {
+            // Open local file
+            let (url, content) = open_local_file(&file_path)?;
+            (url, content, String::new())
+        }
+        None => {
+            let url = target.1.unwrap_or(default_url);
+            if url.starts_with("about:") {
+                (url.clone(), "# TUIrowser\n\nWelcome to TUIrowser - a TUI web browser and RSS reader.\n\nType `g` to navigate to a URL or feed.".to_string(), String::new())
+            } else {
+                fetch_remote_page(&url, &app_config).await?
             }
         }
     };
 
-    // Process images: download and convert to ASCII art
-    let markdown_with_images = process_images_in_markdown(&markdown, &page_url).await?;
+    // Process images: download and convert to ASCII art (only for remote pages)
+    let markdown_with_images = if !page_html.is_empty() {
+        process_images_in_markdown(&markdown, &page_url).await?
+    } else {
+        markdown
+    };
 
     // Setup UI state
     let bm_manager = bookmarks::BookmarksManager::new()?;
     let bm_list = bm_manager.list_bookmarks();
     let history_list = bm_manager.get_recent_history(50);
 
-    let state = tuirowser_ui::AppState {
+    let mut state = tuirowser_ui::AppState {
         url: page_url,
-        content: markdown_with_images,
+        content: String::new(),
+        document: None,
+        heading_index: None,
         running: true,
         mode: tuirowser_ui::InputMode::Normal,
         url_input: String::new(),
         scroll_offset: 0,
         bookmarks: bm_list.iter().map(|b| (b.url.clone(), b.title.clone())).collect(),
         history: history_list.iter().map(|h| (h.url.clone(), h.title.clone(), h.timestamp)).collect(),
+        in_herdr: herdr_env.in_herdr,
+        doc_title: None,
     };
+
+    // Parse content into document model
+    state.set_content(markdown_with_images);
 
     // If HTTP port is specified, start command server and pass channel to run_app
     if let Some(port) = http_port {
