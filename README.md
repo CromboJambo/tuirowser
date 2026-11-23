@@ -105,3 +105,6 @@ This enables agent-driven automation without needing terminal emulation or tmux 
 ## License
 
 AGPL-3.0 — See [LICENSE](LICENSE) for details.
+---
+
+**Contact**: [projects@crombo.dev](mailto:projects@crombo.dev) · **Security**: [Private vulnerability reporting](https://github.com/CromboJambo/tuirowser/security/advisories/new)
