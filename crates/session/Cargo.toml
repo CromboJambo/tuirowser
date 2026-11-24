@@ -3,6 +3,8 @@ name = "tuirowser-session"
 version.workspace = true
 edition.workspace = true
 description = "Tab management, history, and bookmark persistence"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 serde.workspace = true

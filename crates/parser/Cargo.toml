@@ -3,6 +3,8 @@ name = "tuirowser-parser"
 version.workspace = true
 edition.workspace = true
 description = "HTML parsing and markdown conversion pipeline"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 html5ever.workspace = true

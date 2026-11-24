@@ -3,17 +3,19 @@ name = "tuirowser"
 version.workspace = true
 edition.workspace = true
 description = "A TUI web browser that simplifies pages to markdown"
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tuirowser"
 path = "src/main.rs"
 
 [dependencies]
-tuirowser-fetch = { path = "../fetch" }
-tuirowser-parser = { path = "../parser" }
-tuirowser-ui = { path = "../ui" }
-tuirowser-session = { path = "../session" }
-tuirowser-auth = { path = "../auth" }
+tuirowser-fetch = { version = "0.1.1", path = "../fetch" }
+tuirowser-parser = { version = "0.1.1", path = "../parser" }
+tuirowser-ui = { version = "0.1.1", path = "../ui" }
+tuirowser-session = { version = "0.1.1", path = "../session" }
+tuirowser-auth = { version = "0.1.1", path = "../auth" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

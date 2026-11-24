@@ -3,6 +3,8 @@ name = "tuirowser-ui"
 version.workspace = true
 edition.workspace = true
 description = "Ratatui-based terminal UI for the markdown browser"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 ratatui.workspace = true
@@ -15,4 +17,4 @@ comrak = "0.59.0"
 regex = "1.13.1"
 serde.workspace = true
 serde_json.workspace = true
-tuirowser-core = { path = "../core" }
+tuirowser-core = { version = "0.1.1", path = "../core" }

@@ -3,6 +3,8 @@ name = "tuirowser-core"
 version.workspace = true
 edition.workspace = true
 description = "Document model and markdown parsing for tuirowser"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 comrak = "0.59.0"
