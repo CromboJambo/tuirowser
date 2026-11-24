@@ -21,29 +21,49 @@ TUIrowser takes a different approach to web browsing: instead of rendering HTML 
 
 ## Architecture
 
-TUIrowser is built as a Rust workspace with five crates:
+TUIrowser is built as a Rust workspace with seven crates:
 
 | Crate | Purpose |
 |-------|---------|
-| `tuirowser-fetch` | HTTP client with user-agent spoofing and timeout handling |
+| `tuirowser-fetch` | HTTP client with user-agent spoofing, timeout handling, and optional Obscura backend |
 | `tuirowser-parser` | HTML parsing and markdown conversion pipeline |
 | `tuirowser-ui` | Ratatui-based terminal UI with keyboard navigation |
 | `tuirowser-session` | SQLite-backed session management (bookmarks, history) |
+| `tuirowser-auth` | Ephemeral token auth server for interactive login flows |
+| `tuirowser-core` | Shared types: document model, config, layout helpers |
 | `tuirowser-app` | Main application crate that ties everything together |
 
 ## Building
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/tuirowser.git
+git clone https://github.com/CromboJambo/tuirowser.git
 cd tuirowser
 
-# Build the release binary
+# Build the release binary (default: no Obscura)
 cargo build --release
+
+# Build with Obscura browser backend support
+cargo build --release --features tuirowser-fetch/obscura
 
 # Run the browser
 ./target/release/tuirowser
 ```
+
+### Obscura Browser Backend
+
+For JavaScript-heavy pages (SPAs, dynamic content), TUIrowser can delegate rendering to an external [Obscura](https://github.com/h4ckf0r0day/obscura) headless browser server. This is optional and feature-gated:
+
+```bash
+# 1. Start an Obscura MCP server (separate from tuirowser)
+cargo install obscura-cli  # or download from releases
+obscura mcp --http --port 8080
+
+# 2. Build tuirowser with Obscura support
+cargo build --release --features tuirowser-fetch/obscura
+```
+
+TUIrowser connects to Obscura over HTTP JSON-RPC (`http://127.0.0.1:8080/mcp` by default). No compile-time dependency on Obscura's Rust crates — just the external server process. Configure the endpoint in `~/.tuirowser.toml` under `[obscura]`. See [docs/config.md](docs/config.md) for details.
 
 ## Usage
 
@@ -96,7 +116,7 @@ This enables agent-driven automation without needing terminal emulation or tmux 
 ## Roadmap
 
 - [ ] Bitwarden integration for form autofill
-- [ ] JavaScript execution (via headless browser)
+- [x] JavaScript execution (via [Obscura](https://github.com/h4ckf0r0day/obscura) headless browser, `--features tuirowser-fetch/obscura`)
 - [ ] Image support (ASCII art or external viewer)
 - [ ] Tabbed browsing
 - [ ] CSS-aware layout (basic)

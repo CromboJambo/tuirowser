@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP command server for agent-driven browser control (`--port` flag)
 - Podman container image for durable browser-as-a-service deployment
 - `run_app_with_commands()` async API for channel-based command processing
+- Optional Obscura browser backend (`--features tuirowser-fetch/obscura`) for JS-capable page fetching via external headless browser server
 
 ### Changed
 - Updated to Rust 2024 edition
